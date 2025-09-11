@@ -1,40 +1,9 @@
-# import cdsapi
-
-# def download_era5_land_data(output_file, lat_range, lon_range, variables, years):
-#     # Initialize the CDS API client
-#     c = cdsapi.Client()
-
-#     # Create the request
-#     request = {
-#         'product_type': 'reanalysis',
-#         'format': 'netcdf',
-#         'variables': variables,
-#         'area': [lat_range[1], lon_range[0], lat_range[0], lon_range[1]],  # [N, W, S, E]
-#         'date': years,
-#         'grid': [0.1, 0.1],  # specify grid resolution if needed
-#     }
-
-#     # Output the data to a file
-#     c.retrieve('reanalysis-era5-land', request, output_file)
-#     print(f'Data downloaded to {output_file}')
-
-
-# if __name__ == "__main__":
-#     # Define your parameters
-#     output_file = 'era5_land_data.nc'  # Output file name
-#     lat_range = [35.0, 37.0]  # [south, north]
-#     lon_range = [85.0, 87.0]  # [west, east]
-#     variables = [
-#         "snow_depth_water_equivalent",
-#         "snowfall",
-#         "total_precipitation"]  # Example variables
-#     date_range = '2020-01-01/to/2020-01-31'  # Date range in YYYY-MM-DD format
-
-#     # Call the download function
-#     download_era5_land_data(output_file, lat_range, lon_range, variables, date_range)
-
-
-
+# Example script to download ERA-5 reanalysis data
+#---------------------------------------------------------
+# Prerequisites: CDS api access https://cds.climate.copernicus.eu/how-to-api
+# Dataset, variables, extent, time etc. can easily be adjusted. 
+# Example scripts for changed parameters are provided on the fly online,
+# when changing parameters - e.g., https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=download
     
 
 import cdsapi
@@ -81,22 +50,4 @@ client.retrieve(dataset, request, target)
 
 """
 
-
-        """
-
-# client = cdsapi.Client()
-
-# dataset = 'reanalysis-era5-pressure-levels'
-# request = {
-#   'product_type': ['reanalysis'],
-#   'variable': ['geopotential'],
-#   'year': ['2024'],
-#   'month': ['03'],
-#   'day': ['01'],
-#   'time': ['13:00'],
-#   'pressure_level': ['1000'],
-#   'data_format': 'grib',
-# }
-# target = 'download.grib'
-
-# client.retrieve(dataset, request, target)
+"""
