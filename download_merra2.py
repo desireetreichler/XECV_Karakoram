@@ -114,7 +114,7 @@ else :
 
 # Define collections and their variables (corresponding to ERA5 Land variables)
 collections = {
-    'M2TMNXSLV_V5.12.4': ['T2M', 'U10M', 'V10M'],  # Temperature and wind
+    'M2TMNXSLV_V5.12.4': ['T2M', 'U10M', 'V10M'],  # Temperature and wind, manually also downloaded rel humidity (QV2M) 
     'M2TMNXLND_V5.12.4': ['SNODP', 'SNOMAS', 'SNOMLT', 'EVPSNOW'],  # Snow variables
     'M2TMNXFLX_V5.12.4': ['PRECTOTCORR', 'PRECSNO', 'EVAP']  # Precipitation and evaporation
 }
