@@ -4,8 +4,10 @@
 # after you save the file, don't forget to make it executable
 #   i.e. - "chmod 755 <name_of_script>"
 #
-import requests
-#
+
+# This script downloads a number of JRA-3Q variables, subsets them to an aoi (HMA), combines files of the same
+# variable type, and stores them in data/JRA3Q. 
+
 files = [
     "anl_surf/198001/jra3q-ms-mn.anl_surf.0_0_0.tmp2m-hgt-an-gauss-mn.1980010100_1980013118.nc",
     "anl_surf/198001/jra3q-ms-mn.anl_surf.0_194_7.snlh2o-sfc-an-gauss-mn.1980010100_1980013118.nc",
@@ -6153,20 +6155,119 @@ files = [
 
 ]
 
-# to do: subset the data to this aoi:
-aoi = [45, 65, 20, 105] 
-#
+import requests
+import tempfile
+from collections import defaultdict
+from pathlib import Path
+import xarray as xr
 
-# to do: for each variable, combine the subsets in one nc file. 
+# settings for the automated preprocessing
+BASE_URL = "https://osdf-director.osg-htc.org/ncar/gdex/d640002"
+AOI = [45, 65, 20, 105]  # [North, West, South, East]
+OUTPUT_DIR = Path("data/JRA3Q")
+CHUNK_SIZE = 1024 * 1024
 
-# download the data file(s)
-for file in files:
-    idx = file.rfind("/")
-    if (idx > 0):
-        ofile = file[idx+1:]
+# get the variable name from the filename
+def variable_name_from_path(file_path: str) -> str:
+    """Extract the JRA variable token from the filename."""
+    filename = Path(file_path).name
+    parts = filename.split(".")
+    if len(parts) < 4:
+        raise ValueError(f"Unexpected filename format: {filename}")
+    return parts[3].split("-")[0]
+
+# subset to the provided aoi
+def subset_dataset(ds: xr.Dataset, aoi: list[float]) -> xr.Dataset:
+    """Subset a dataset to [north, west, south, east]."""
+    north, west, south, east = aoi
+
+    lat_name = next((name for name in ("latitude", "lat", "g0_lat_1") if name in ds.coords), None)
+    lon_name = next((name for name in ("longitude", "lon", "g0_lon_2") if name in ds.coords), None)
+
+    if lat_name is None or lon_name is None:
+        raise ValueError(f"Could not identify latitude/longitude coordinates in {list(ds.coords)}")
+
+    lat_values = ds[lat_name].values
+    if lat_values[0] > lat_values[-1]:
+        ds = ds.sel({lat_name: slice(north, south)})
     else:
-        ofile = file
+        ds = ds.sel({lat_name: slice(south, north)})
 
-    response = requests.get("https://osdf-director.osg-htc.org/ncar/gdex/d640002/" + file)
-    with open(ofile, "wb") as f:
-        f.write(response.content)
+    lon_values = ds[lon_name].values
+    if lon_values.min() >= 0 and west < 0:
+        west = west % 360
+        east = east % 360
+
+    if west <= east:
+        ds = ds.sel({lon_name: slice(west, east)})
+    else:
+        left = ds.sel({lon_name: slice(west, None)})
+        right = ds.sel({lon_name: slice(None, east)})
+        ds = xr.concat([left, right], dim=lon_name)
+
+    return ds
+
+# download the file in chunks to avoid memory issues and save to the temporary directory
+def download_file(session: requests.Session, remote_path: str, local_path: Path) -> None:
+    """Download one NetCDF file to the temporary directory."""
+    url = f"{BASE_URL}/{remote_path}"
+    print(f"Downloading {remote_path}")
+    with session.get(url, stream=True, timeout=600) as response:
+        response.raise_for_status()
+        with local_path.open("wb") as fh:
+            for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                if chunk:
+                    fh.write(chunk)
+
+# main: connect all the steps together: group files by variable, download, subset, combine, and save
+def main() -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    grouped_files: dict[str, list[str]] = defaultdict(list)
+    for file_path in files:
+        grouped_files[variable_name_from_path(file_path)].append(file_path)
+
+    # use a temporary directory to store downloaded and subsetted files, which will be cleaned up automatically
+    with tempfile.TemporaryDirectory(prefix="jra3q_tmp_") as tmp_dir_name:
+        tmp_dir = Path(tmp_dir_name)
+        with requests.Session() as session:
+            # process each variable separately to avoid memory issues, and to save intermediate results in case of failure
+            for variable, variable_files in sorted(grouped_files.items()):
+                print(f"\nProcessing variable: {variable} ({len(variable_files)} files)")
+                subset_paths: list[Path] = []
+
+                # process one file
+                for file_path in sorted(variable_files):
+                    downloaded_path = tmp_dir / Path(file_path).name
+                    subset_path = tmp_dir / f"subset_{downloaded_path.name}"
+
+                    download_file(session, file_path, downloaded_path)
+
+                    with xr.open_dataset(downloaded_path) as ds:
+                        subset = subset_dataset(ds, AOI)
+                        subset.load()
+                        subset.to_netcdf(subset_path)
+
+                    downloaded_path.unlink()
+                    subset_paths.append(subset_path)
+
+                # combine all the subsets for this variable into one dataset, save it, and clean up the subsets
+                datasets = [xr.open_dataset(path) for path in subset_paths]
+                try:
+                    combined = xr.concat(datasets, dim="time").sortby("time")
+                    output_path = OUTPUT_DIR / f"JRA3Q_{variable}_monthly.nc"
+                    combined.load()
+                    combined.to_netcdf(output_path)
+                    print(f"Saved {output_path}")
+                    combined.close()
+                finally:
+                    for ds in datasets:
+                        ds.close()
+                    for path in subset_paths:
+                        if path.exists():
+                            path.unlink()
+
+    print("All JRA3Q downloads and subsets completed.")
+
+
+if __name__ == "__main__":
+    main()
