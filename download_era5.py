@@ -14,6 +14,7 @@ import os
 os.makedirs('data/ERA5', exist_ok=True)
 os.makedirs('data/ERA5L', exist_ok=True)
 
+
 # Note: ERA5 variable names differ slightly from ERA5-Land
 # Some variables (like snowmelt, snow_evaporation) are not available in ERA5 single levels
 for datasetname, dataset in zip(['ERA5','ERA5L'], ["reanalysis-era5-single-levels-monthly-means", "reanalysis-era5-land-monthly-means"]):
@@ -78,10 +79,69 @@ for datasetname, dataset in zip(['ERA5','ERA5L'], ["reanalysis-era5-single-level
     print('='*60)
 
 
-"""
-"1950", "1951", "1952", "1953", "1954", "1955",
-        "1956", "1957", "1958", "1959", "1960", "1961",
-        "1962", "1963", "1964", "1965", "1966", "1967",
-        "1968", "1969", "1970", "1971", "1972", "1973",
-        "1974", "1975", "1976", "1977", "1978", "1979",
-"""
+
+# download the DEM surface (from static fields):
+
+def download_static_field(dataset, datasetname, variable, target_suffix):
+    print(f'\n{"="*60}')
+    print(f'Downloading static field: {variable} ({datasetname})')
+    print(f'{"="*60}')
+
+    request = {
+        "product_type": ["monthly_averaged_reanalysis"],
+        "variable": [variable],
+        "year": ["2025"],
+        "month": ["01"],
+        "time": ["00:00"],
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+        "area": [45, 65, 20, 105]  # [North, West, South, East]
+    }
+    target = f"data/{datasetname}/{datasetname}_{target_suffix}.nc"
+
+    try:
+        client = cdsapi.Client()
+        client.retrieve(dataset, request, target)
+        print(f'Successfully downloaded static field: {variable} ({datasetname})')
+    except Exception as e:
+        print(f'Error downloading static field {variable} for {datasetname}: {e}')
+
+
+
+# Download for ERA5 and ERA5L (same variable, different datasets)
+download_static_field(
+    "reanalysis-era5-single-levels-monthly-means",
+    "ERA5",
+    "geopotential",
+    "gridcell_surface_elevation_geopotential_monthly_2025_01"
+)
+
+download_static_field(
+    "reanalysis-era5-land-monthly-means",
+    "ERA5L",
+    "geopotential",
+    "gridcell_surface_elevation_geopotential_monthly_2025_01"
+)
+
+
+# Convert downloaded static geopotential fields to GeoTIFF with GDAL: run these commands in a (bash) terminal with gdal installed
+# Geopotential can optionally be converted to elevation in meters with gdal_calc.py
+
+# 'ERA5 to GeoTIFF:'
+print(
+    'gdal_translate -of GTiff '
+    'NETCDF:"data/ERA5/ERA5_gridcell_surface_elevation_geopotential_monthly_2025_01.nc":z '
+    'data/ERA5/ERA5_gridcell_surface_elevation_geopotential_monthly_2025_01.tif'
+)
+#'ERA5-Land to GeoTIFF:'
+print(
+    'gdal_translate -of GTiff '
+    'NETCDF:"data/ERA5L/ERA5L_gridcell_surface_elevation_geopotential_monthly_2025_01.nc":z '
+    'data/ERA5L/ERA5L_gridcell_surface_elevation_geopotential_monthly_2025_01.tif'
+)
+
+# Note: the data are in geopotential units and need to be converted to elevation in meters by dividing by
+# the gravitational acceleration (9.80665 m/s^2) 
+# -> I did this manually in qgis, where I also assigned the WGS84 coordinate reference system (EPSG:4326) to the output GeoTIFFs, but it can also be done with gdal_calc.py in a terminal:
+
+# output files: data/ERA5/ERA5_gridcell_surface_elevation_geopotential_m.tif and data/ERA5L/ERA5L_gridcell_surface_elevation_geopotential_m.tif
